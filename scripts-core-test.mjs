@@ -1,0 +1,14 @@
+import { analyzePhonology } from './dist/core/phonology.js';
+import { analyzeTranscript } from './dist/core/analysis.js';
+import { defaultProfile, hydrateProfile, updateProfileFromSession } from './dist/core/profile.js';
+import { generateWorkout } from './dist/core/generator.js';
+const tx=(text)=>({text,words:text.split(/\s+/).map(word=>({word})),provider:'none',capturedAt:Date.now()});
+const p=analyzePhonology('light night bright fight'.split(' '));
+if(p.maxChain<4)throw new Error('expected a 4-word rhyme chain');
+const a=analyzeTranscript(tx('light night bright fight river river river river'),45,0,[]);
+if(a.rhymeDensity<=0||a.repeatedWords[0]?.word!=='river')throw new Error('transcript analysis invariant failed');
+let profile=defaultProfile();profile=updateProfileFromSession(profile,{skillScores:{rhyme_retrieval:.9},durationSeconds:60,wordCount:20,recordedSeconds:60,exerciseId:'rhyme-burst',difficulty:5,evidenceKind:'objective'});
+if(profile.sessionsCompleted!==1)throw new Error('profile count invariant failed');
+const w=generateWorkout(profile,'stable');if(w.blocks.length!==6||!w.focusSkill)throw new Error('workout invariant failed');
+const migrated=hydrateProfile({...profile,version:2});if(!migrated.trainingLoad||!migrated.calibration)throw new Error('profile migration invariant failed');
+console.log('CORE_TESTS_OK');

@@ -1,0 +1,4 @@
+import type { ExerciseDefinition, TrainingProfile } from './types';
+export function exerciseReadiness(profile:TrainingProfile,ex:ExerciseDefinition){const scores=ex.skills.map(s=>profile.skills[s.skill]?.confidence??0);const avg=scores.reduce((a,b)=>a+b,0)/Math.max(scores.length,1);const attempts=profile.masteredExercises[ex.id]??0;return Math.max(0,Math.min(1,avg*.72+Math.min(attempts/6,.28)));}
+export function nextDifficulty(profile:TrainingProfile,ex:ExerciseDefinition){const readiness=exerciseReadiness(profile,ex);return Math.max(1,Math.min(10,ex.difficulty + (readiness>.82?1:readiness>.65?.5:readiness<.28?-1:0)));}
+export function isMastered(profile:TrainingProfile,ex:ExerciseDefinition){return (profile.masteredExercises[ex.id]??0)>=5 && ex.skills.every(s=>(profile.skills[s.skill]?.confidence??0)>.76);}

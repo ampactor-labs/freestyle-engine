@@ -1,0 +1,32 @@
+import type { EvidenceKind, FailureMode, SkillId, SkillState, TrainingLoadState, TrainingProfile } from './types';
+import { ALL_SKILLS } from './types';
+const clamp=(n:number,min=0,max=1)=>Math.max(min,Math.min(max,n));
+const emptyLoad=():TrainingLoadState=>({rolling7Day:0,rolling28Day:0,last7Days:[],currentBlock:0,recommendedLoad:420,deloadRecommended:false});
+export function defaultProfile():TrainingProfile {
+  const skills={} as Record<SkillId,SkillState>;
+  for(const skill of ALL_SKILLS)skills[skill]={skill,confidence:.18,evidenceCount:0,recentTrend:'flat',lastPracticedAt:null,strengths:[],weaknesses:[],recentScores:[],lastScore:null};
+  return{version:4,sessionsCompleted:0,currentStreak:0,bestStreak:0,lastSessionDate:null,totalPracticeSeconds:0,totalWords:0,totalRecordedSeconds:0,skills,failureModes:[],masteredExercises:{},recentExerciseIds:[],lastWorkoutSeed:null,calibration:{completed:false,startedAt:null,completedAt:null,batteryIndex:0,baselineScores:{},transferBaseline:{}},transferScores:{},trainingLoad:emptyLoad()};
+}
+export function hydrateProfile(input:Partial<TrainingProfile>|undefined):TrainingProfile{
+  const base=defaultProfile();if(!input)return base;const out=structuredClone(base) as TrainingProfile;Object.assign(out,input);
+  for(const skill of ALL_SKILLS){out.skills[skill]={...base.skills[skill],...(input.skills?.[skill]??{})};out.skills[skill].recentScores=out.skills[skill].recentScores??[];}
+  out.failureModes=input.failureModes??[];out.masteredExercises=input.masteredExercises??{};out.recentExerciseIds=input.recentExerciseIds??[];out.totalPracticeSeconds=input.totalPracticeSeconds??0;out.totalWords=input.totalWords??0;out.totalRecordedSeconds=input.totalRecordedSeconds??0;
+  out.calibration={...base.calibration,...(input.calibration??{})};out.transferScores=input.transferScores??{};out.trainingLoad={...base.trainingLoad,...(input.trainingLoad??{})};out.trainingLoad.last7Days=out.trainingLoad.last7Days??[];out.version=4;return out;
+}
+export function weakestSkills(profile:TrainingProfile,count=4){return Object.values(profile.skills).sort((a,b)=>{const pa=a.confidence+(a.evidenceCount<4?-.12:0)+(a.recentTrend==='down'?-.08:0);const pb=b.confidence+(b.evidenceCount<4?-.12:0)+(b.recentTrend==='down'?-.08:0);return pa-pb;}).slice(0,count);}
+export function strongestSkills(profile:TrainingProfile,count=4){return Object.values(profile.skills).sort((a,b)=>b.confidence-a.confidence).slice(0,count);}
+function updateLoad(profile:TrainingProfile,now:number,load:number):TrainingLoadState{const day=new Date(now).toISOString().slice(0,10);const rows=[...profile.trainingLoad.last7Days.filter(x=>x.date!==day),{date:day,load}].sort((a,b)=>a.date.localeCompare(b.date)).slice(-28);const rolling7=rows.slice(-7).reduce((n,x)=>n+x.load,0);const rolling28=rows.reduce((n,x)=>n+x.load,0);const recommended=profile.calibration.completed?420:300;return{last7Days:rows,rolling7Day:rolling7,rolling28Day:rolling28,currentBlock:profile.trainingLoad.currentBlock+1,recommendedLoad:recommended,deloadRecommended:rolling7>recommended*1.35};}
+export function updateProfileFromSession(profile:TrainingProfile,args:{skillScores:Partial<Record<SkillId,number>>,durationSeconds:number,wordCount:number,recordedSeconds:number,exerciseId?:string,failureModes?:FailureMode[],now?:number,evidenceKind?:EvidenceKind,transferScores?:Partial<Record<SkillId,number>>,difficulty?:number}):TrainingProfile{
+  const now=args.now??Date.now();const next=hydrateProfile(profile);const today=new Date(now).toISOString().slice(0,10);
+  if(next.lastSessionDate!==today){if(next.lastSessionDate){const prev=Date.parse(next.lastSessionDate+'T00:00:00Z');const days=Math.round((Date.parse(today+'T00:00:00Z')-prev)/86400000);next.currentStreak=days===1?next.currentStreak+1:1;}else next.currentStreak=1;next.bestStreak=Math.max(next.bestStreak,next.currentStreak);next.lastSessionDate=today;}
+  next.sessionsCompleted+=1;next.totalPracticeSeconds+=Math.max(0,args.durationSeconds);next.totalWords+=Math.max(0,args.wordCount);next.totalRecordedSeconds+=Math.max(0,args.recordedSeconds);
+  for (const [key, raw] of Object.entries(args.skillScores) as [SkillId, number][]) {const s=next.skills[key];if(!s||!Number.isFinite(raw))continue;const score=clamp(raw),previous=s.confidence;const uncertainty=s.evidenceCount<5 ? .025 : 0;const objective=args.evidenceKind==='objective' ? .035 : 0;const weight=Math.min(.19,.04+uncertainty+objective);const delta=(score-previous)*weight+(score>.8 ? .015 : score<.22 ? -.012 : 0);s.confidence=clamp(previous+delta);s.lastScore=score;s.lastPracticedAt=now;s.evidenceCount+=1;s.recentScores=[...s.recentScores,score].slice(-10);s.recentTrend=score>previous+.025?'up':score<previous-.025?'down':'flat';if(score>=.76)s.strengths=Array.from(new Set([...s.strengths,'reliable under current difficulty'])).slice(-4);if(score<.44)s.weaknesses=Array.from(new Set([...s.weaknesses,'needs deliberate practice'])).slice(-4);}
+  if (args.transferScores) for (const [key, raw] of Object.entries(args.transferScores) as [SkillId, number][])if(Number.isFinite(raw))next.transferScores[key]=[...(next.transferScores[key]??[]),clamp(raw)].slice(-8);
+  if(args.exerciseId){next.masteredExercises[args.exerciseId]=(next.masteredExercises[args.exerciseId]??0)+1;next.recentExerciseIds=[args.exerciseId,...next.recentExerciseIds.filter(x=>x!==args.exerciseId)].slice(0,16);}
+  for(const fm of args.failureModes??[]){const ex=next.failureModes.find(x=>x.id===fm.id);if(ex){ex.severity=clamp(ex.severity*.72+fm.severity*.28);ex.evidenceCount+=1;ex.lastSeenAt=now;}else next.failureModes.push({...fm,lastSeenAt:now,evidenceCount:1});}
+  next.failureModes=next.failureModes.sort((a,b)=>b.severity-a.severity).slice(0,16);
+  const load=Math.max(.5,args.durationSeconds/60)*Math.max(1,args.difficulty??5);next.trainingLoad=updateLoad(next,now,load);return next;
+}
+export function applyCalibration(next:TrainingProfile,skillScores:Partial<Record<SkillId,number>>,transferScore?:number){const p=hydrateProfile(next);for(const[k,v]of Object.entries(skillScores)as[SkillId,number][])if(v!==undefined)p.calibration.baselineScores[k]=v;if(transferScore!==undefined)p.calibration.transferBaseline['coherence']=transferScore;return p;}
+export function skillLevel(c:number){return c<.25?'emerging':c<.45?'developing':c<.65?'functional':c<.82?'strong':'elite';}
+export function skillColorClass(c:number){return c<.25?'low':c<.45?'mid':c<.65?'good':c<.82?'high':'elite';}
