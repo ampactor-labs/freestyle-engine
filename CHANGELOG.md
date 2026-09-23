@@ -5,7 +5,7 @@
 The prototype has been replaced by a full local-first training instrument.
 
 ### Training intelligence
-- persistent 22-skill profile
+- persistent 21-skill profile
 - evidence-weighted confidence updates
 - recent trend tracking
 - recurring failure-mode detection
