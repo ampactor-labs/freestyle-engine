@@ -2,6 +2,10 @@
 
 A local-first deliberate-practice instrument for freestyle rap. No accounts. No AI. The browser measures your performance, maintains a longitudinal skill model, and prescribes the next workout from evidence.
 
+**Status: Prototype.** Calibration, the beat, recording, review and the adaptive plan all run; every score is a proxy, and live transcription exists only where the browser provides speech recognition.
+
+Live at **[ampactor.dev/freestyle-engine](https://ampactor.dev/freestyle-engine/)**.
+
 ## What is in the complete build
 
 - **Audio intelligence:** local recording analysis for silence, phrase segmentation, onsets, vocal activity, pitch range, dynamics, clipping and BPM-relative timing.
@@ -47,6 +51,14 @@ Push `main`. `.github/workflows/pages.yml` builds `dist/` and publishes it with 
 ## Product principle
 
 The engine should never pretend that a metric is the art. It measures proxies, explains how they were obtained, keeps uncertainty visible, and uses repeated evidence plus transfer tests to decide what to train next.
+
+## Weak spots
+
+Every score is a proxy. Rhyme, timing and filler counts come from a speech transcript and from pronunciations that are looked up online or guessed from spelling offline. Nothing in the engine can tell whether a bar was good.
+
+- **Transcription belongs to the browser.** Words come from the Web Speech API, which Firefox does not provide. In Chrome that recognizer is a Google web service, so the audio of a take leaves the device to be transcribed even though the app itself uploads nothing.
+- **The recognizer was built for dictation, not rap.** Fast delivery, slang and deliberate slurring are where a dictation engine drops words, and the rhyme and filler scores can only count the words it kept.
+- **One browser holds everything.** The profile, sessions and recordings live in IndexedDB. The export button saves the profile and session history as JSON; clearing site data without one starts the profile over.
 
 
 ## Language provider stack
